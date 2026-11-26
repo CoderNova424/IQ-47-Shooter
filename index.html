@@ -175,7 +175,7 @@ const GUNS = {
 const ORDER = Object.keys(GUNS);
 const TRAILS = { none:{n:'None',c:0,col:null}, sparks:{n:'Sparks',c:200,col:'#ffd23d'}, smoke:{n:'Smoke',c:300,col:'#9aa3b5'}, neon:{n:'Neon',c:500,col:'#c86bff'} };
 const COLORS = ['#3ddc97','#ff5c5c','#5ca8ff','#ffd23d','#c86bff','#ff9d3d','#ffffff','#2fe6e6'];
-const MAXL = 5;
+const MAXL = Infinity;
 const upCost = l => 150 + l * 150;
 const rnd = n => Math.random() * n;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -265,7 +265,7 @@ function hostTick(dt) {
 
 // Hits are reported by whichever client's bullet connected, then applied by the host.
 function handleHit(from, m) {
-  if (m && m.t === 'pw') { const pl = W && W.players[from]; if (pl && pl.alive && isFinite(m.x) && isFinite(m.y)) startPW(from, m.p, m.x, m.y); return; }
+  if (m && m.t === 'pw') { const pl = W && W.players[from]; if (pl && pl.alive && isFinite(m.x) && isFinite(m.y)) startPW(from, m.p, m.x, m.y, isFinite(m.f) ? Math.max(1, Math.min(1000, m.f)) : 1); return; }
   if (!W || W.ended || m.t !== 'hit') return;
   if (m.kind === 'e' && W.mode !== 'versus') {
     const list = W.enemies.concat(W.boss ? [W.boss] : []);
@@ -755,7 +755,7 @@ function renderGarage() {
       : s.l >= MAXL ? `<button disabled>Maxed</button>`
       : `<button ${save.cash < upCost(s.l) ? 'disabled' : ''} onclick="upgrade('${id}')">Upgrade $${upCost(s.l)}</button>`;
     const eq = `<button ${!s.u || save.equipped === id ? 'disabled' : ''} onclick="equip('${id}')">${save.equipped === id ? 'Equipped' : 'Equip'}</button>`;
-    return `<div class="card ${s.u ? '' : 'lock'}"><b>${g.n}</b><small>${s.u ? 'Level ' + s.l + ' / ' + MAXL : 'Locked'}</small>${up}${eq}</div>`;
+    return `<div class="card ${s.u ? '' : 'lock'}"><b>${g.n}</b><small>${s.u ? 'Level ' + s.l : 'Locked'}</small>${up}${eq}</div>`;
   }).join('');
   $('colors').innerHTML = COLORS.map(c => `<span class="sw ${save.color === c ? 'on' : ''}" style="background:${c}" onclick="setColor('${c}')"></span>`).join('');
   $('trails').innerHTML = Object.keys(TRAILS).map(t => {
@@ -1097,11 +1097,11 @@ function renderShop() {
     const g = GUNS[id], s = save.guns[id]; let b;
     if (!s.u) b = `<button ${save.cash < GBUY[id] ? 'disabled' : ''} onclick="shopDo('gunbuy','${id}')">Buy $${GBUY[id]}</button>`;
     else b = (s.l >= MAXL ? `<button disabled>Maxed</button>` : `<button ${save.cash < upCost(s.l) ? 'disabled' : ''} onclick="shopDo('gunup','${id}')">Upgrade $${upCost(s.l)}</button>`) + `<button ${save.equipped === id ? 'disabled' : ''} onclick="shopDo('equip','${id}')">${save.equipped === id ? 'Equipped' : 'Equip'}</button>`;
-    return `<div class="it"><div class="t"><span>${g.n}</span><span>${s.u ? 'Lv ' + s.l + ' / ' + MAXL : 'Locked'}</span></div>${s.u ? '' : `<small>Or unlock free at ${g.unlock} score in a run</small>`}${b}</div>`;
+    return `<div class="it"><div class="t"><span>${g.n}</span><span>${s.u ? 'Lv ' + s.l : 'Locked'}</span></div>${s.u ? '' : `<small>Or unlock free at ${g.unlock} score in a run</small>`}${b}</div>`;
   }).join('');
   if (shopTab === 'upgrades') h += Object.keys(UPS).map(id => {
     const l = save.up[id];
-    return `<div class="it"><div class="t"><span>${UPS[id].n}</span><span style="color:#f59e0b">Lvl ${l}</span></div><small>${UPS[id].d}</small><button ${l >= 20 || save.cash < upc(l) ? 'disabled' : ''} onclick="shopDo('up','${id}')">${l >= 20 ? 'Maxed' : 'Upgrade ($' + upc(l).toLocaleString() + ')'}</button></div>`;
+    return `<div class="it"><div class="t"><span>${UPS[id].n}</span><span style="color:#f59e0b">Lvl ${l}</span></div><small>${UPS[id].d}</small><button ${save.cash < upc(l) ? 'disabled' : ''} onclick="shopDo('up','${id}')">Upgrade ($${upc(l).toLocaleString()})</button></div>`;
   }).join('');
   if (shopTab === 'upgrades') h += chargeUpItem();
   if (shopTab === 'powers') h += powersTab();
@@ -1119,11 +1119,12 @@ function shopDo(k, id) {
   if (k === 'gunbuy' && save.cash >= GBUY[id]) { save.cash -= GBUY[id]; save.guns[id].u = 1; ok = true; }
   else if (k === 'gunup') { const s = save.guns[id], c = upCost(s.l); if (s.l < MAXL && save.cash >= c) { save.cash -= c; s.l++; ok = true; } }
   else if (k === 'equip') { save.equipped = id; ok = true; }
+  else if (k === 'powlv') { const c = plc(id); if (save.powers[id] && save.cash >= c) { save.cash -= c; save.plv[id] = (save.plv[id] || 0) + 1; ok = true; } }
   else if (k === 'name') { save.name = id; $('name').value = id; if (W && W.players[myId]) W.players[myId].name = id; ok = true; }
   else if (k === 'style') { if (save.ownedStyles[id]) { save.style = id; ok = true; } else if (save.cash >= STYLES[id].c) { save.cash -= STYLES[id].c; save.ownedStyles[id] = 1; save.style = id; ok = true; } }
   else if (k === 'powbuy') { if (!save.powers[id] && save.cash >= PBUY[id]) { save.cash -= PBUY[id]; save.powers[id] = 1; ok = true; } }
   else if (k === 'powup') { const l = save.up.charge, c = pwc(l); if (save.cash >= c) { save.cash -= c; save.up.charge++; ok = true; } }
-  else if (k === 'up') { const l = save.up[id], c = upc(l); if (l < 20 && save.cash >= c) { save.cash -= c; save.up[id]++; ok = true; } }
+  else if (k === 'up') { const l = save.up[id], c = upc(l); if (save.cash >= c) { save.cash -= c; save.up[id]++; ok = true; } }
   else if (k === 'color') { if (save.ownedColors[id]) { save.color = id; ok = true; } else if (save.cash >= 100) { save.cash -= 100; save.ownedColors[id] = 1; save.color = id; ok = true; } }
   else if (k === 'trail') { if (save.ownedTrails[id]) { save.trail = id; ok = true; } else if (save.cash >= TRAILS[id].c) { save.cash -= TRAILS[id].c; save.ownedTrails[id] = 1; save.trail = id; ok = true; } }
   if (ok) { sfx('buy'); persist(); renderShop(); } else sfx('bad');
@@ -1147,8 +1148,9 @@ const POW = {
   overdrive:{ n:'Overdrive', key:'KeyG', k:'G', price:2200, secs:45, col:'#fb7185', sfx:'od', d:'Double fire rate and double damage for 8 seconds.' }
 };
 const PBUY = {}; for (const k in POW) PBUY[k] = POW[k].price;
+const plc = id => Math.round(400 * Math.pow(1.5, save.plv[id] || 0));
 const pwc = l => Math.round(250 * Math.pow(1.45, l));
-let odT = 0;
+let odT = 0; save.plv = save.plv || {}; const pf = id => 1 + .1 * (save.plv[id] || 0);
 SFX.frz = () => { tone(1400, 300, .5, 'sine', .15); tone(900, 200, .5, 'triangle', .1, .05); };
 SFX.zap = () => { noise(.15, .2); tone(1000, 80, .25, 'sawtooth', .14); };
 SFX.shd = () => { tone(300, 900, .3, 'sine', .15); tone(600, 1200, .3, 'triangle', .1, .1); };
@@ -1166,7 +1168,7 @@ function pAct(id) {
 }
 function powerRow() {
   return Object.keys(POW).filter(id => save.powers[id]).map(id => {
-    const P = POW[id], a = pAct(id), pct = a ? Math.round(a * 100) : Math.floor(save.pch[id] * 100);
+    const P = POW[id], a = pAct(id), pct = a ? Math.min(100, Math.round(a * 100)) : Math.floor(save.pch[id] * 100);
     return `<div class="r"><span>${P.n} (${P.k}):</span><b style="color:${P.col}">${a ? 'ACTIVE' : pct + '%'}</b></div><div class="bar"><i style="width:${pct}%;background:${P.col}"></i></div>`;
   }).join('');
 }
@@ -1177,18 +1179,18 @@ function chargeUpItem() {
 function powersTab() {
   return Object.keys(POW).map(id => {
     const P = POW[id], own = save.powers[id];
-    const b = !own ? `<button ${save.cash < P.price ? 'disabled' : ''} onclick="shopDo('powbuy','${id}')">Buy $${P.price.toLocaleString()}</button>` : `<button onclick="usePower('${id}');renderShop()">Activate (${P.k})</button>`;
-    return `<div class="it"><div class="t"><span>${P.n}</span><span>${own ? `<span id="pw_${id}">${Math.floor(save.pch[id] * 100)}% ready</span>` : 'Locked'}</span></div><small>${P.d}</small>${b}</div>`;
+    const b = !own ? `<button ${save.cash < P.price ? 'disabled' : ''} onclick="shopDo('powbuy','${id}')">Buy $${P.price.toLocaleString()}</button>` : `<button onclick="usePower('${id}');renderShop()">Activate (${P.k})</button><button ${save.cash < plc(id) ? 'disabled' : ''} onclick="shopDo('powlv','${id}')">Upgrade ($${plc(id).toLocaleString()})</button>`;
+    return `<div class="it"><div class="t"><span>${P.n}${own ? ' Lv ' + (save.plv[id] || 0) : ''}</span><span>${own ? `<span id="pw_${id}">${Math.floor(save.pch[id] * 100)}% ready</span>` : 'Locked'}</span></div><small>${P.d}</small>${b}</div>`;
   }).join('');
 }
 setInterval(() => { for (const id in POW) { const el = $('pw_' + id); if (el) el.textContent = Math.floor(save.pch[id] * 100) + '% ready'; } }, 300);
 
-function startPW(by, id, x, y) {
+function startPW(by, id, x, y, f = 1) {
   if (!W || W.ended || W.mode === 'versus') return;
-  if (id === 'blackhole' && !W.bh) W.bh = { x, y, t:5, max:5, by };
-  else if (id === 'freeze' && !W.fz) W.fz = { t:6, max:6 };
-  else if (id === 'lightning' && !W.ls) W.ls = { t:5, max:5, by, cd:0, bolts:[] };
-  else if (id === 'shield') { const p = W.players[by]; if (p) p.sh = 8; }
+  if (id === 'blackhole' && !W.bh) W.bh = { x, y, t:5 * f, max:5 * f, by };
+  else if (id === 'freeze' && !W.fz) W.fz = { t:6 * f, max:6 * f };
+  else if (id === 'lightning' && !W.ls) W.ls = { t:5 * f, max:5 * f, by, cd:0, bolts:[], dm:8 * f };
+  else if (id === 'shield') { const p = W.players[by]; if (p) p.sh = 8 * f; }
 }
 function usePower(a) {
   const id = POW[a] ? a : Object.keys(POW).find(k => POW[k].key === a);
@@ -1200,9 +1202,9 @@ function usePower(a) {
   if (!me || !me.alive || pAct(id)) return;
   if (save.pch[id] < 1) { toast(P.n + ' ' + Math.floor(save.pch[id] * 100) + '% ready'); sfx('bad'); return; }
   save.pch[id] = 0; save.powersUsed++; persist();
-  if (id === 'overdrive') odT = 8;
-  else if (isHost) startPW(myId, id, mine.x, mine.y);
-  else if (conn && conn.open) conn.send({ t:'pw', p:id, x:mine.x, y:mine.y });
+  if (id === 'overdrive') odT = 8 * pf(id);
+  else if (isHost) startPW(myId, id, mine.x, mine.y, pf(id));
+  else if (conn && conn.open) conn.send({ t:'pw', p:id, x:mine.x, y:mine.y, f:pf(id) });
   toast(P.n.toUpperCase() + '!'); sfx(P.sfx);
 }
 
@@ -1256,7 +1258,7 @@ hostTick = function (dt) {
     if (L.t <= 0 && !L.bolts.length) W.ls = null;
     else if (L.t > 0 && L.cd <= 0) {
       L.cd = .2; const tg = W.enemies.concat(W.boss ? [W.boss] : []).filter(t => t.hp > 0);
-      for (let i = 0; i < 3 && tg.length; i++) { const t = tg.splice(rnd(tg.length) | 0, 1)[0]; t.hp -= 8; t.by = L.by; L.bolts.push({ x:t.x, y:t.y, sx:t.x + rnd(80) - 40, l:.25 }); }
+      for (let i = 0; i < 3 && tg.length; i++) { const t = tg.splice(rnd(tg.length) | 0, 1)[0]; t.hp -= L.dm || 8; t.by = L.by; L.bolts.push({ x:t.x, y:t.y, sx:t.x + rnd(80) - 40, l:.25 }); }
     }
   }
   let saved = null;
