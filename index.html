@@ -278,7 +278,7 @@ function handleHit(from, m) {
     const v = W.players[m.id];
     if (v && v.alive && m.id !== from) {
       v.hp -= m.dmg;
-      if (v.hp <= 0) { die(v); const k = W.players[from]; if (k) { k.kills++; k.score++; k.cash += 10; } }
+      if (v.hp <= 0) { die(v); const k = W.players[from]; if (k) { k.kills++; k.score++; k.cash += 800; } }
     }
   }
 }
@@ -409,10 +409,10 @@ function leave() {
 // ---------- Local player ----------
 function fire() {
   const id = save.equipped, st = gstat(id, save.guns[id].l);
-  mine.cd = st.rate / (odT > 0 ? 2 : 1);
-  for (let i = 0; i < st.count; i++) {
-    const a = mine.angle + (rnd(1) - .5) * st.spread * 2 + (st.count > 1 ? (i - (st.count - 1) / 2) * .08 : 0);
-    mine.bul.push({ x:mine.x+Math.cos(a)*20, y:mine.y+Math.sin(a)*20, vx:Math.cos(a)*st.spd, vy:Math.sin(a)*st.spd, dmg:st.dmg * (odT > 0 ? 2 : 1), splash:st.splash, life:1.2, color:save.color });
+  mine.cd = st.rate / 2 / (odT > 0 ? 2 : 1); const n = st.count + 2;
+  for (let i = 0; i < n; i++) {
+    const a = mine.angle + (rnd(1) - .5) * st.spread * 2 + (n > 1 ? (i - (n - 1) / 2) * .08 : 0);
+    mine.bul.push({ x:mine.x+Math.cos(a)*20, y:mine.y+Math.sin(a)*20, vx:Math.cos(a)*st.spd, vy:Math.sin(a)*st.spd, dmg:st.dmg * 4 * (odT > 0 ? 2 : 1), splash:st.splash, life:1.6, color:save.color });
   }
 }
 function localTick(dt) {
@@ -856,7 +856,7 @@ function credit(id, pts) {
   p.combo = (p.comboT > 0 ? (p.combo || 1) : 0) + 1; p.comboT = 3;
   const wc = (W.mode === 'hub' && W.area === 'world') ? WORLDS[W.wid] : WORLDS[0];
   const base = (4 + W.wave * 3) * wc.cash * (pts >= 100 * W.wave ? 10 : 1);
-  p.score += pts; p.kills++; p.cash += Math.round(base * (1 + (p.combo - 1) * .25));
+  p.score += pts; p.kills++; p.cash += Math.round(base * (1 + (p.combo - 1) * .25)) * 80;
 }
 function hurt(p, n) {
   if (!p.alive || p.sh > 0) return;
@@ -971,7 +971,7 @@ function syncStats(me, dt) {
   }
   lastCash = me.cash;
   const ds = me.score - lastScore;
-  if (ds > 0 && W.mode !== 'versus') { save.xp += ds; const L = plvl(); if (L > lastLvl) { lastLvl = L; save.cash += L * 150; toast('LEVEL UP! Lv ' + L + ' · +$' + (L * 150).toLocaleString()); sfx('lvl'); } }
+  if (ds > 0 && W.mode !== 'versus') { save.xp += ds * 80; const L = plvl(); if (L > lastLvl) { lastLvl = L; save.cash += L * 150; toast('LEVEL UP! Lv ' + L + ' · +$' + (L * 150).toLocaleString()); sfx('lvl'); } }
   lastScore = me.score;
   if (me.hp < lastHp - .5) sfx('hurt'); lastHp = me.hp;
   if (lastAlive && !me.alive) sfx('die'); lastAlive = me.alive;
@@ -1206,10 +1206,27 @@ function usePower(a) {
   toast(P.n.toUpperCase() + '!'); sfx(P.sfx);
 }
 
+function spawnBot() {
+  const wc = W.mode === 'hub' ? WORLDS[W.wid || 0] : WORLDS[0], a = hostCenter(); let x, y;
+  if (W.w) { const t = rnd(6.283), d = 450 + rnd(300); x = Math.max(20, Math.min(W.w - 20, a.x + Math.cos(t) * d)); y = Math.max(20, Math.min(W.h - 20, a.y + Math.sin(t) * d)); }
+  else { const e = rnd(4) | 0; x = e === 1 ? cv.width + 20 : e === 3 ? -20 : rnd(cv.width); y = e === 0 ? -20 : e === 2 ? cv.height + 20 : rnd(cv.height); }
+  const hp = Math.max(1, Math.round((2 + Math.floor(W.wave * .7)) * wc.hp * .8));
+  W.enemies.push({ id:W.nid++, x, y, r:15, hp, maxHp:hp, spd:(70 + rnd(40) + W.wave * 4) * wc.spd, cd:0, by:null, kind:rnd(4) | 0, amb:1 });
+}
+function chaos(dt) {
+  if (W.mode === 'versus' || W.ended || (W.mode === 'hub' && W.area !== 'world')) return;
+  const me = W.players.host; if (!me || !me.alive) return;
+  if (W.live && !W.boss && W.enemies.length && W.enemies.every(e => e.amb)) { W.live = false; W.wave++; W.gap = 1.5; }
+  W.ct = (W.ct || 0) - dt; W.ce = (W.ce === undefined ? 20 : W.ce) - dt;
+  const cap = Math.min(120, 40 + W.wave * 6);
+  if (W.ct <= 0) { W.ct = .45; for (let i = 0; i < 2 && W.enemies.length < cap; i++) spawnBot(); }
+  if (W.ce <= 0) { W.ce = 25 + rnd(15); toast('STAMPEDE!'); sfx('boss'); for (let i = 0; i < 30 && W.enemies.length < cap + 30; i++) spawnBot(); }
+}
 // Host: powers, health orbs
 const _hostTickPW = hostTick;
 hostTick = function (dt) {
   W.drops = W.drops || [];
+  chaos(dt);
   for (const e of W.enemies) if (e.hp <= 0 && !e.d) { e.d = 1; if (Math.random() < .18) W.drops.push({ x:e.x, y:e.y, t:12 }); }
   if (W.boss && W.boss.hp <= 0 && !W.boss.d) { W.boss.d = 1; for (let i = 0; i < 3; i++) W.drops.push({ x:W.boss.x + rnd(60) - 30, y:W.boss.y + rnd(60) - 30, t:15 }); }
   for (const p of Object.values(W.players)) if (p.sh > 0) p.sh -= dt;
@@ -1219,7 +1236,7 @@ hostTick = function (dt) {
       if (!p.alive) continue;
       const d = Math.hypot(p.x - o.x, p.y - o.y);
       if (d < 150 && d > 1) { const m = Math.min(d, 320 * dt); o.x += (p.x - o.x) / d * m; o.y += (p.y - o.y) / d * m; }
-      if (d < 45) { if (p.hp < 100) p.hp = Math.min(100, p.hp + 30); else p.cash += 10 + W.wave * 2; o.t = 0; sfx('coin'); break; }
+      if (d < 45) { if (p.hp < 100) p.hp = Math.min(100, p.hp + 30); else p.cash += (10 + W.wave * 2) * 80; o.t = 0; sfx('coin'); break; }
     }
   }
   W.drops = W.drops.filter(o => o.t > 0);
